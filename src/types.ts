@@ -1,4 +1,14 @@
-import { blob, nat, nat64, Principal, Record, text, Variant, Vec } from "azle";
+import {
+  blob,
+  bool,
+  nat,
+  nat64,
+  Principal,
+  Record,
+  text,
+  Variant,
+  Vec,
+} from "azle";
 
 export const User = Record({
   userId: text,
@@ -14,15 +24,29 @@ export const File = Record({
   createdAt: nat64,
 });
 
-export const Service = Record({
-  id: Principal,
-  createdAt: nat64,
+export const FileChunkResponse = Record({
+  id: text,
+  name: text,
+  chunk: blob,
+  hasNext: bool,
+});
+
+export const FilePayload = Record({
+  id: text,
+  name: text,
+  size: nat,
+  content: blob,
 });
 
 export const FileResponse = Record({
   id: text,
   name: text,
   canisterId: text,
+});
+
+export const Service = Record({
+  id: Principal,
+  createdAt: nat64,
 });
 
 export const Error = Variant({

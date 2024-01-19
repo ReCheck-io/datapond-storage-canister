@@ -2,47 +2,52 @@ import {
   Canister,
   Err,
   Ok,
-  Principal,
   Result,
   StableBTreeMap,
   bool,
   ic,
+  nat,
+  query,
   text,
   update,
 } from "azle";
 
-import { Error, File, FileResponse } from "./types";
+import { Error, File, FileChunkResponse, FilePayload } from "./types";
+import { bigIntToNumber } from "./utils";
 
 const fileStorage = StableBTreeMap(text, File, 0);
 
 export default Canister({
   /**
    * Function to handle file uploads to the user's canister.
-   * @param canisterId - The Principal ID of the user's canister.
    * @param file - The file data.
    * @param isChunked - Boolean indicating whether the file upload is chunked.
    * @returns Result indicating success or an error.
    */
   uploadFile: update(
-    [Principal, File, bool],
-    Result(FileResponse, Error),
-    (canisterId, file, isChunked) => {
-      if (!ic.caller().compareTo(canisterId)) {
+    [FilePayload, bool],
+    Result(bool, Error),
+    (file, isChunked) => {
+      if (!ic.isController(ic.caller())) {
         return Err({ Unauthorized: "Unauthorized access!" });
       }
 
-      const existingFile = fileStorage.get(file.id);
+      const existingFile = fileStorage.get(file.id).Some;
 
       if (isChunked && existingFile) {
-        // If chunks exist for this file, append the new chunk
+        const updatedContent = new Uint8Array(
+          existingFile.content.length + file.content.length,
+        );
+        updatedContent.set(existingFile.content, 0);
+        updatedContent.set(file.content, existingFile.content.length);
+
         const updateFile: typeof File = {
           ...existingFile,
-          content: existingFile.content.concat(file.content),
+          content: updatedContent,
         };
 
         fileStorage.insert(file.id, updateFile);
       } else {
-        // Store the file in the user's canister storage
         const newFile: typeof File = {
           ...file,
           createdAt: ic.time(),
@@ -51,35 +56,44 @@ export default Canister({
         fileStorage.insert(file.id, newFile);
       }
 
-      return Ok({
-        canisterId: ic.id(),
-        id: file.id,
-        name: file.name,
-      });
+      return Ok(true);
     },
   ),
 
   /**
    * Function to handle getting files.
-   * @param canisterId - The Principal ID of the user's canister.
    * @param fileId - The file ID.
+   * @param chunkNumber - The number of the requested chunk.
    * @returns Result file or an error.
    */
-  getFile: update(
-    [Principal, text],
-    Result(File, Error),
-    (canisterId, fileId) => {
-      if (!ic.caller().compareTo(canisterId)) {
+  getFile: query(
+    [text, nat],
+    Result(FileChunkResponse, Error),
+    (fileId, chunkNumber) => {
+      if (!ic.isController(ic.caller())) {
         return Err({ Unauthorized: "Unauthorized access!" });
       }
 
-      const file = fileStorage.get(fileId);
+      const file = fileStorage.get(fileId).Some;
 
-      if (!file || "None" in file) {
+      if (!file) {
         return Err({ NotFound: `Could not find file with given id=${fileId}` });
       }
 
-      return Ok(file.Some);
+      const fileContent = file.content;
+
+      const chunkSize = 2 * 1024 * 1024; // 3MB
+      const offset = bigIntToNumber(chunkNumber) * chunkSize;
+      const chunk = fileContent.slice(offset, offset + chunkSize);
+
+      const hasNext = offset + chunkSize < fileContent.length;
+
+      return Ok({
+        id: file.id,
+        name: file.name,
+        chunk: chunk,
+        hasNext: hasNext,
+      });
     },
   ),
 });

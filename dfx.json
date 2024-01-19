@@ -20,7 +20,7 @@
       "wasm": ".azle/facade/facade.wasm",
       "gzip": true,
       "declarations": {
-        "output": "./dfx-declarations/factory"
+        "output": "./dfx-declarations/facade"
       }
     }
   }

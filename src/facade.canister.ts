@@ -16,12 +16,16 @@ import {
   text,
   update,
 } from "azle";
-import {
-  CanisterStatusResult,
-  managementCanister,
-} from "azle/canisters/management";
+import { managementCanister } from "azle/canisters/management";
 
-import { Error, User, File, Service } from "./types";
+import {
+  Error,
+  User,
+  Service,
+  FilePayload,
+  FileResponse,
+  FileChunkResponse,
+} from "./types";
 import { bigIntToNumber, getCanisterStatus } from "./utils";
 
 import StorageCanister from "./storage.canister";
@@ -36,28 +40,24 @@ export default Canister({
    * @param serviceId - The Principal ID of the service with access.
    * @returns Result indicating success or an error.
    */
-  initializeCanister: update(
-    [Principal],
-    Result(Service, Error),
-    (serviceId) => {
-      if (!ic.caller().compareTo(ic.id())) {
-        return Err({ Unauthorized: "Unauthorized access!" });
-      }
+  initializeCanister: update([Principal], Result(bool, Error), (serviceId) => {
+    if (!ic.caller().compareTo(ic.id())) {
+      return Err({ Unauthorized: "Unauthorized access!" });
+    }
 
-      if (serviceStorage.containsKey(serviceId)) {
-        return Err({ Conflict: "User already exists!" });
-      }
+    if (serviceStorage.containsKey(serviceId)) {
+      return Err({ Conflict: "Service already exists!" });
+    }
 
-      const newService: typeof Service = {
-        id: serviceId,
-        createdAt: ic.time(),
-      };
+    const newService: typeof Service = {
+      id: serviceId,
+      createdAt: ic.time(),
+    };
 
-      serviceStorage.insert(serviceId, newService);
+    serviceStorage.insert(serviceId, newService);
 
-      return Ok(newService);
-    },
-  ),
+    return Ok(true);
+  }),
 
   /**
    * Loads child canister's wasm output code and stores it.
@@ -70,7 +70,7 @@ export default Canister({
       return Err({ Unauthorized: "Unauthorized access!" });
     }
 
-    if (!blob || !(blob instanceof Blob)) {
+    if (!blob || !blob.byteLength) {
       return Err({
         InvalidPayload: "Please enter a valid payload for canister code!",
       });
@@ -82,67 +82,52 @@ export default Canister({
   }),
 
   /**
-   * Tests canister deployment by creating and checking its status.
-   *
-   * @returns Result containing canister status or an error.
-   */
-  testCanisterDeploy: update(
-    [],
-    Result(CanisterStatusResult, Error),
-    async () => {
-      const canisterId = await deployCanister();
-
-      if (!canisterId) {
-        return Err({ NotKnown: "Failed to find or create canister." });
-      }
-
-      const canisterStatus = await getCanisterStatus(canisterId);
-
-      return Ok(canisterStatus);
-    },
-  ),
-
-  /**
    * Function to handle file uploads and dynamically create user canisters.
    *
    * @param file - The file data.
-   * @param userId - The Principal ID of the user.
+   * @param userId - The Mongoose ID of the user.
    * @param isChunked - A boolean indicating if the file upload is chunked.
    * @returns Result indicating success or an error.
    */
   uploadFile: update(
-    [File, text, bool],
-    Result(bool, Error),
+    [FilePayload, text, bool],
+    Result(FileResponse, Error),
     async (file, userId, isChunked) => {
-      try {
-        if (!serviceStorage.containsKey(ic.caller())) {
-          return Err({ Unauthorized: "Unauthorized access!" });
-        }
-
-        const targetCanisterId = await findOrCreateCanister(userId, file.size);
-
-        if (!targetCanisterId) {
-          return Err({ NotKnown: "Failed to find or create canister." });
-        }
-
-        const uploadResult = await StorageCanister(targetCanisterId).uploadFile(
-          targetCanisterId,
-          file,
-          isChunked,
-        );
-
-        if (uploadResult.Err) {
-          return Err({
-            UploadError: `Failed to upload file. Error: ${JSON.stringify(
-              uploadResult.Err,
-            )}`,
-          });
-        }
-
-        return Ok(true);
-      } catch (error) {
-        return Err({ NotKnown: "An unexpected error occurred." });
+      if (!serviceStorage.containsKey(ic.caller())) {
+        return Err({ Unauthorized: "Unauthorized access!" });
       }
+
+      const targetCanisterId = await findOrCreateCanister(userId, file.size);
+
+      if (!targetCanisterId) {
+        return Err({ NotKnown: "Failed to find or create canister." });
+      }
+
+      ic.print(
+        `Using canister '${targetCanisterId}' now uploading the file...`,
+      );
+
+      const storageCanister = StorageCanister(targetCanisterId);
+
+      const uploadResult = await ic.call(storageCanister.uploadFile, {
+        args: [file, isChunked],
+      });
+
+      if (uploadResult.Err) {
+        return Err({
+          UploadError: `Failed to upload file. Error: ${JSON.stringify(
+            uploadResult.Err,
+          )}`,
+        });
+      }
+
+      ic.print("Upload was successful.");
+
+      return Ok({
+        id: file.id,
+        name: file.name,
+        canisterId: targetCanisterId.toText(),
+      });
     },
   ),
 
@@ -152,45 +137,52 @@ export default Canister({
    * @param userId - The Principal ID of the user.
    * @param fileId - The MongoDB ID of the file.
    * @param canisterId - The Principal ID of the storage canister where the file is stored.
+   * @param chunkNumber - The chunk number to retrieve (optional for chunked files).
    * @returns Result indicating success or an error.
    */
   getFile: query(
-    [text, text, text],
-    Result(text, Error),
-    async (userId, fileId, canisterId) => {
-      try {
-        if (!serviceStorage.containsKey(ic.caller())) {
-          return Err({ Unauthorized: "Unauthorized access!" });
-        }
-
-        const user = userStorage.get(userId);
-
-        if (!user || user.None || !user.Some || !user.Some.canisters.length) {
-          return Err({
-            NotFound: `Could not find user with given id=${userId}!`,
-          });
-        }
-
-        const targetCanisterId = user.Some.canisters.find(
-          (x: string) => x === canisterId,
-        );
-
-        if (!targetCanisterId) {
-          return Err({
-            NotFound: `Could not find canister with given id=${canisterId}`,
-          });
-        }
-
-        const uploadResult = await StorageCanister(
-          Principal.fromText(targetCanisterId),
-        ).getFile(Principal.fromText(targetCanisterId), fileId);
-
-        ic.print(uploadResult);
-
-        return Ok("ok");
-      } catch (error) {
-        return Err({ NotKnown: "An unexpected error occurred." });
+    [text, text, text, nat],
+    Result(FileChunkResponse, Error),
+    async (userId, fileId, canisterId, chunkNumber) => {
+      if (!serviceStorage.containsKey(ic.caller())) {
+        return Err({ Unauthorized: "Unauthorized access!" });
       }
+
+      const user = userStorage.get(userId);
+
+      if (!user || user.None || !user.Some || !user.Some.canisters.length) {
+        return Err({
+          NotFound: `Could not find user with given id=${userId}!`,
+        });
+      }
+
+      let targetCanisterId = user.Some.canisters.find(
+        (x: string) => x === canisterId,
+      );
+
+      if (!targetCanisterId) {
+        return Err({
+          NotFound: `Could not find canister with given id=${canisterId}`,
+        });
+      }
+
+      targetCanisterId = Principal.fromText(targetCanisterId);
+
+      const storageCanister = StorageCanister(targetCanisterId);
+
+      const fileResult = await ic.call(storageCanister.getFile, {
+        args: [fileId, chunkNumber],
+      });
+
+      if (fileResult.Err) {
+        return Err({
+          NotKnown: `Failed to get file. Error: ${JSON.stringify(
+            fileResult.Err,
+          )}`,
+        });
+      }
+
+      return Ok(fileResult.Ok);
     },
   ),
 });
@@ -209,7 +201,7 @@ async function deployCanister(): Promise<Principal | null> {
           }),
         },
       ],
-      cycles: 100_000_000_000_000_000n,
+      cycles: 100_000_000_000_000n,
     },
   );
 
@@ -219,7 +211,7 @@ async function deployCanister(): Promise<Principal | null> {
 
   if (!hasCode) return null;
 
-  const binaryBuffer = Buffer.from(hasCode.Some, "binary");
+  const binaryBuffer = Buffer.from(hasCode, "binary");
   const wasmModuleArray: number[] = Array.from(binaryBuffer);
 
   await ic.call(managementCanister.install_code, {
@@ -234,7 +226,8 @@ async function deployCanister(): Promise<Principal | null> {
     cycles: 100_000_000_000n,
   });
 
-  ic.print("Successfully deployed code to canister! " + canisterId);
+  ic.print("Successfully created/deployed canister! " + canisterId);
+
   return canisterId;
 }
 
@@ -244,7 +237,11 @@ async function findOrCreateCanister(
 ): Promise<Principal | null> {
   const user = userStorage.get(userId);
 
+  ic.print("userData" + JSON.stringify(user.Some, null, 4));
+
   if (!user || !user.Some) {
+    ic.print(`User "${userId}" is not found. Creating record for it now..`);
+
     const canisterId = await deployCanister();
 
     if (!canisterId) {
@@ -258,6 +255,7 @@ async function findOrCreateCanister(
     };
 
     userStorage.insert(userId, newUser);
+
     return canisterId;
   } else {
     return findCanisterWithFreeSpace(user.Some, fileSize);
@@ -265,14 +263,21 @@ async function findOrCreateCanister(
 }
 
 async function findCanisterWithFreeSpace(
-  currentUser: typeof User,
+  user: typeof User,
   fileSize: nat,
 ): Promise<Principal | null> {
-  for (const canisterId of currentUser.canisters) {
+  // Filter out canisters marked as full
+  const availableCanisters = user.canisters.filter(
+    (canisterId) => !user.canistersMarkedFull?.includes(canisterId),
+  );
+
+  for (const canisterId of availableCanisters) {
+    ic.print("Searching for a canister with free space...");
+
     const canisterPrincipal = Principal.fromText(canisterId);
 
     const canisterStatus = await getCanisterStatus(canisterPrincipal);
-    const storageLimit = 96 * 1024 * 1024 * 1024;
+    const storageLimit = 50 * 1024 * 1024;
     const threshold = 0.95;
 
     const availableStorage =
@@ -282,10 +287,10 @@ async function findCanisterWithFreeSpace(
       return canisterPrincipal;
     } else if (
       availableStorage >= storageLimit * threshold &&
-      !currentUser.canistersMarkedFull?.includes(canisterId)
+      !user.canistersMarkedFull?.includes(canisterId)
     ) {
-      currentUser.canistersMarkedFull = currentUser.canistersMarkedFull || [];
-      currentUser.canistersMarkedFull.push(canisterId);
+      user.canistersMarkedFull = user.canistersMarkedFull || [];
+      user.canistersMarkedFull.push(canisterId);
     }
   }
 
@@ -295,7 +300,7 @@ async function findCanisterWithFreeSpace(
     return null;
   }
 
-  currentUser.canisters.push(canisterId.toString());
+  user.canisters.push(canisterId.toString());
 
   return canisterId;
 }
