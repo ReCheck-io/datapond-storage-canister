@@ -82,11 +82,21 @@ export default Canister({
 
       const fileContent = file.content;
 
-      const chunkSize = 2 * 1024 * 1024; // 3MB
-      const offset = bigIntToNumber(chunkNumber) * chunkSize;
-      const chunk = fileContent.slice(offset, offset + chunkSize);
+      const maxChunkSize = 1.8 * 1024 * 1024; // 2MB
 
-      const hasNext = offset + chunkSize < fileContent.length;
+      if (fileContent.length < maxChunkSize) {
+        return Ok({
+          id: file.id,
+          name: file.name,
+          chunk: fileContent,
+          hasNext: false,
+        });
+      }
+
+      const offset = bigIntToNumber(chunkNumber) * maxChunkSize;
+      const chunk = fileContent.slice(offset, offset + maxChunkSize);
+
+      const hasNext = offset + maxChunkSize < fileContent.length;
 
       return Ok({
         id: file.id,

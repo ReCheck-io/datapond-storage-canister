@@ -1,4 +1,3 @@
-
 # Datapond Storage
 
 ## Setup
@@ -30,6 +29,6 @@
 
 6. Run the deployment script to build, deploy, and initialize canisters:
 ```bash
-  ./deploy.sh '(principal "<YOUR_PRINCIPLE_HERE>")'
+  ./deploy.sh --service-id '<YOUR_PRINCIPLE_HERE>'
 ```
 Note: This process may take some time.

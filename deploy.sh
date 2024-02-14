@@ -117,7 +117,7 @@ echo "Adding provided principal to the list of authorized services..."
 dfx canister call "$facade_canister_id" initializeCanister "(principal \"$service_id\")"
 
 # TODO: 7. Run dfx generate and generate types and copy facade types to datapond api
-echo "Generating types and copying to datapond api..."
-dfx generate && cp -R ./dfx-declarations/facade ../datapond-api/src/canisters/declarations
+echo "Generating types..."
+dfx generate
 
 echo 'DataPond Storage canisters are deployed and set successfully!'

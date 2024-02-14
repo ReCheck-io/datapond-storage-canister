@@ -71,8 +71,16 @@ export default Canister({
     }
 
     if (!blob || !blob.byteLength) {
+      let errorMessage = "Invalid payload for canister code!";
+
+      if (!blob) {
+        errorMessage += " Blob is null or undefined.";
+      } else {
+        errorMessage += ` Blob size: ${blob.byteLength} bytes.`;
+      }
+
       return Err({
-        InvalidPayload: "Please enter a valid payload for canister code!",
+        InvalidPayload: errorMessage,
       });
     }
 
@@ -277,7 +285,7 @@ async function findCanisterWithFreeSpace(
     const canisterPrincipal = Principal.fromText(canisterId);
 
     const canisterStatus = await getCanisterStatus(canisterPrincipal);
-    const storageLimit = 50 * 1024 * 1024;
+    const storageLimit = 500 * 1024 * 1024;
     const threshold = 0.95;
 
     const availableStorage =
