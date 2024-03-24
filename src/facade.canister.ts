@@ -45,6 +45,12 @@ export default Canister({
       return Err({ Unauthorized: "Unauthorized access!" });
     }
 
+    if (serviceStorage.keys().length > 0) {
+      return Err({
+        Unauthorized: "Canister already has an authorized service ID!",
+      });
+    }
+
     if (serviceStorage.containsKey(serviceId)) {
       return Err({ Conflict: "Service already exists!" });
     }
@@ -66,6 +72,13 @@ export default Canister({
    * @returns Result indicating success or an error.
    */
   loadCanisterCode: update([blob], Result(bool, Error), (blob) => {
+    if (
+      serviceStorage.keys().length > 0 &&
+      !serviceStorage.containsKey(ic.caller())
+    ) {
+      return Err({ Unauthorized: "Unauthorized access!" });
+    }
+
     if (!ic.caller().compareTo(ic.id())) {
       return Err({ Unauthorized: "Unauthorized access!" });
     }
@@ -245,10 +258,10 @@ async function findOrCreateCanister(
 ): Promise<Principal | null> {
   const user = userStorage.get(userId);
 
-  ic.print("userData" + JSON.stringify(user.Some, null, 4));
+  // ic.print("userData" + JSON.stringify(user.Some, null, 4));
 
   if (!user || !user.Some) {
-    ic.print(`User "${userId}" is not found. Creating record for it now..`);
+    // ic.print(`User "${userId}" is not found. Creating record for it now..`);
 
     const canisterId = await deployCanister();
 
@@ -280,12 +293,12 @@ async function findCanisterWithFreeSpace(
   );
 
   for (const canisterId of availableCanisters) {
-    ic.print("Searching for a canister with free space...");
+    // ic.print("Searching for a canister with free space...");
 
     const canisterPrincipal = Principal.fromText(canisterId);
 
     const canisterStatus = await getCanisterStatus(canisterPrincipal);
-    const storageLimit = 500 * 1024 * 1024;
+    const storageLimit = 50 * 1024 * 1024 * 1024;
     const threshold = 0.95;
 
     const availableStorage =
