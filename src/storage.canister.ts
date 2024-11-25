@@ -1,109 +1,117 @@
 import {
-  Canister,
-  Err,
-  Ok,
-  Result,
+  IDL,
   StableBTreeMap,
-  bool,
-  ic,
-  nat,
+  isController,
+  caller,
   query,
-  text,
+  time,
   update,
 } from "azle";
 
-import { Error, File, FileChunkResponse, FilePayload } from "./types";
-import { bigIntToNumber } from "./utils";
+import { bigIntToNumber, handleError } from "./utils";
+import { BoolResult, File, FileChunkResult, FilePayload } from "./types";
 
-const fileStorage = StableBTreeMap(text, File, 0);
+export default class StorageCanister {
+  fileStorage = StableBTreeMap<string, File>(0);
 
-export default Canister({
   /**
-   * Function to handle file uploads to the user's canister.
-   * @param file - The file data.
-   * @param isChunked - Boolean indicating whether the file upload is chunked.
-   * @returns Result indicating success or an error.
+   * Upload a file to the user's canister, either as a full file or in chunks.
+   * @param file - The file data to be uploaded.
+   * @param isChunked - Indicates if the file upload is in chunks.
+   * @returns Result of the operation with a success indicator or error.
    */
-  uploadFile: update(
-    [FilePayload, bool],
-    Result(bool, Error),
-    (file, isChunked) => {
-      if (!ic.isController(ic.caller())) {
-        return Err({ Unauthorized: "Unauthorized access!" });
+  @update([FilePayload, IDL.Bool], BoolResult)
+  uploadFile(file: FilePayload, isChunked: boolean): BoolResult {
+    try {
+      // Authorization check
+      if (!isController(caller())) {
+        throw { Unauthorized: "Unauthorized access!" };
       }
 
-      const existingFile = fileStorage.get(file.id).Some;
+      // Retrieve any existing file with the given ID
+      const existingFile = this.fileStorage.get(file.id);
 
       if (isChunked && existingFile) {
+        // Append chunk to existing file content if file exists and isChunked is true
         const updatedContent = new Uint8Array(
           existingFile.content.length + file.content.length,
         );
         updatedContent.set(existingFile.content, 0);
         updatedContent.set(file.content, existingFile.content.length);
 
-        const updateFile: typeof File = {
+        const updatedFile: File = {
           ...existingFile,
           content: updatedContent,
         };
 
-        fileStorage.insert(file.id, updateFile);
+        this.fileStorage.insert(file.id, updatedFile);
       } else {
-        const newFile: typeof File = {
+        // Insert as a new file if not chunked or if file is not already present
+        const newFile: File = {
           ...file,
-          createdAt: ic.time(),
+          createdAt: time(),
         };
 
-        fileStorage.insert(file.id, newFile);
+        this.fileStorage.insert(file.id, newFile);
       }
 
-      return Ok(true);
-    },
-  ),
+      return { Ok: true };
+    } catch (error) {
+      return { Err: handleError(error) };
+    }
+  }
 
   /**
-   * Function to handle getting files.
-   * @param fileId - The file ID.
-   * @param chunkNumber - The number of the requested chunk.
-   * @returns Result file or an error.
+   * Retrieve a specific chunk of a file by its ID.
+   * @param fileId - The ID of the file to retrieve.
+   * @param chunkNumber - The requested chunk number.
+   * @returns Result with file chunk information or error.
    */
-  getFile: query(
-    [text, nat],
-    Result(FileChunkResponse, Error),
-    (fileId, chunkNumber) => {
-      if (!ic.isController(ic.caller())) {
-        return Err({ Unauthorized: "Unauthorized access!" });
+  @query([IDL.Text, IDL.Nat], FileChunkResult)
+  getFile(fileId: string, chunkNumber: bigint): FileChunkResult {
+    try {
+      // Authorization check
+      if (!isController(caller())) {
+        throw { Unauthorized: "Unauthorized access!" };
       }
 
-      const file = fileStorage.get(fileId).Some;
-
+      // Retrieve the file from storage
+      const file = this.fileStorage.get(fileId);
       if (!file) {
-        return Err({ NotFound: `Could not find file with given id=${fileId}` });
+        throw { NotFound: `Could not find file with given id=${fileId}` };
       }
 
+      // Handle file chunking logic
       const fileContent = file.content;
+      const maxChunkSize = 1.8 * 1024 * 1024; // 1.8 MB
 
-      const maxChunkSize = 1.8 * 1024 * 1024; // 2MB
-
-      if (fileContent.length < maxChunkSize) {
-        return Ok({
-          id: file.id,
-          name: file.name,
-          chunk: fileContent,
-          hasNext: false,
-        });
+      // Check if file content is smaller than the maximum chunk size
+      if (fileContent.length <= maxChunkSize) {
+        return {
+          Ok: {
+            id: file.id,
+            name: file.name,
+            chunk: fileContent,
+            hasNext: false,
+          },
+        };
       }
 
+      // Calculate offset and extract the requested chunk
       const offset = bigIntToNumber(chunkNumber) * maxChunkSize;
       const chunk = fileContent.slice(offset, offset + maxChunkSize);
-
       const hasNext = offset + maxChunkSize < fileContent.length;
 
-      return Ok({
-        id: file.id,
-        name: file.name,
-        chunk: chunk,
-        hasNext: hasNext,
-      });
-    },
-  ),
-});
+      return {
+        Ok: {
+          id: file.id,
+          name: file.name,
+          chunk,
+          hasNext,
+        },
+      };
+    } catch (error) {
+      return { Err: handleError(error) };
+    }
+  }
+}

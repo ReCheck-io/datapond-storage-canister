@@ -1,5 +1,6 @@
 import type { Principal } from '@dfinity/principal';
 import type { ActorMethod } from '@dfinity/agent';
+import type { IDL } from '@dfinity/candid';
 
 export interface _SERVICE {
   'getFile' : ActorMethod<
@@ -21,9 +22,29 @@ export interface _SERVICE {
           { 'Conflict' : string }
       }
   >,
+  'getStatus' : ActorMethod<
+    [],
+    {
+      'status' : { 'stopped' : null } |
+        { 'stopping' : null } |
+        { 'running' : null },
+      'memory_size' : bigint,
+      'cycles' : bigint,
+      'settings' : {
+        'freezing_threshold' : bigint,
+        'controllers' : Array<Principal>,
+        'reserved_cycles_limit' : bigint,
+        'memory_allocation' : bigint,
+        'compute_allocation' : bigint,
+      },
+      'idle_cycles_burned_per_day' : bigint,
+      'module_hash' : [] | [Uint8Array | number[]],
+      'reserved_cycles' : bigint,
+    }
+  >,
   'initializeCanister' : ActorMethod<
     [Principal],
-    { 'Ok' : boolean } |
+    { 'Ok' : { 'id' : Principal, 'createdAt' : bigint } } |
       {
         'Err' : { 'NotKnown' : string } |
           { 'InvalidPayload' : string } |
@@ -67,3 +88,5 @@ export interface _SERVICE {
       }
   >,
 }
+export declare const idlFactory: IDL.InterfaceFactory;
+export declare const init: (args: { IDL: typeof IDL }) => IDL.Type[];

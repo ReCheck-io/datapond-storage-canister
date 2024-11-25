@@ -10,8 +10,7 @@ export { idlFactory } from "./facade.did.js";
  * beginning in dfx 0.15.0
  */
 export const canisterId =
-  process.env.CANISTER_ID_FACADE ||
-  process.env.FACADE_CANISTER_ID;
+  process.env.CANISTER_ID_FACADE;
 
 export const createActor = (canisterId, options = {}) => {
   const agent = options.agent || new HttpAgent({ ...options.agentOptions });
@@ -39,5 +38,3 @@ export const createActor = (canisterId, options = {}) => {
     ...options.actorOptions,
   });
 };
-
-export const facade = createActor(canisterId);

@@ -97,8 +97,8 @@ fi
 
 # Build storage canister
 echo "Building Storage canister..."
-dfx canister create "$storage_canister_id" --network="$network"
-dfx build --network="$network" "$storage_canister_id"
+dfx canister create "$storage_canister_id"
+dfx compile "$storage_canister_id"
 
 # Run optimization command to optimize storage canister's wasm output
 echo "Optimizing storage wasm output..."

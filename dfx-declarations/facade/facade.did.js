@@ -22,11 +22,39 @@ export const idlFactory = ({ IDL }) => {
         ],
         ['query'],
       ),
+    'getStatus' : IDL.Func(
+        [],
+        [
+          IDL.Record({
+            'status' : IDL.Variant({
+              'stopped' : IDL.Null,
+              'stopping' : IDL.Null,
+              'running' : IDL.Null,
+            }),
+            'memory_size' : IDL.Nat,
+            'cycles' : IDL.Nat,
+            'settings' : IDL.Record({
+              'freezing_threshold' : IDL.Nat,
+              'controllers' : IDL.Vec(IDL.Principal),
+              'reserved_cycles_limit' : IDL.Nat,
+              'memory_allocation' : IDL.Nat,
+              'compute_allocation' : IDL.Nat,
+            }),
+            'idle_cycles_burned_per_day' : IDL.Nat,
+            'module_hash' : IDL.Opt(IDL.Vec(IDL.Nat8)),
+            'reserved_cycles' : IDL.Nat,
+          }),
+        ],
+        [],
+      ),
     'initializeCanister' : IDL.Func(
         [IDL.Principal],
         [
           IDL.Variant({
-            'Ok' : IDL.Bool,
+            'Ok' : IDL.Record({
+              'id' : IDL.Principal,
+              'createdAt' : IDL.Nat64,
+            }),
             'Err' : IDL.Variant({
               'NotKnown' : IDL.Text,
               'InvalidPayload' : IDL.Text,
