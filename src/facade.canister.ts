@@ -31,7 +31,8 @@ import {
 } from "./utils";
 
 export default class {
-  codeStorage = StableBTreeMap<number, Uint8Array>(0);
+  private wasmModule: Uint8Array | null = null; // Global variable for Wasm module
+
   userStorage = StableBTreeMap<string, User>(1);
   serviceStorage = StableBTreeMap<Principal, Service>(2);
 
@@ -45,12 +46,6 @@ export default class {
     try {
       if (!isController(caller())) {
         throw { Unauthorized: "Unauthorized access!" };
-      }
-
-      if (this.serviceStorage.keys().length > 0) {
-        throw {
-          Unauthorized: "Canister already has an authorized service ID!",
-        };
       }
 
       if (this.serviceStorage.containsKey(serviceId)) {
@@ -71,10 +66,8 @@ export default class {
   @update([IDL.Vec(IDL.Nat8)], BoolResult)
   loadCanisterCode(blobData: Uint8Array): BoolResult {
     try {
-      const isEmptyCodeStorage = this.codeStorage.isEmpty();
-
       if (
-        !isEmptyCodeStorage &&
+        !this.wasmModule &&
         this.serviceStorage.keys().length > 0 &&
         !this.serviceStorage.containsKey(caller())
       ) {
@@ -89,7 +82,7 @@ export default class {
         };
       }
 
-      this.codeStorage.insert(0, blobData);
+      this.wasmModule = blobData;
       return { Ok: true };
     } catch (error) {
       return { Err: handleError(error) };
@@ -111,11 +104,14 @@ export default class {
         userId,
         file.size,
       );
+
       if (!targetCanisterId) {
         throw { NotKnown: "Failed to find or create canister." };
       }
 
       const uploadResult = await call(targetCanisterId, "uploadFile", {
+        paramIdlTypes: [FilePayload, IDL.Bool],
+        returnIdlType: BoolResult,
         args: [file, isChunked],
       });
 
@@ -164,6 +160,8 @@ export default class {
       }
 
       const fileResult = await call(targetCanisterId, "getFile", {
+        paramIdlTypes: [IDL.Text, IDL.Nat],
+        returnIdlType: FileChunkResult,
         args: [fileId, chunkNumber],
       });
 
@@ -175,7 +173,7 @@ export default class {
         };
       }
 
-      return fileResult.Ok;
+      return { Ok: fileResult.Ok };
     } catch (error) {
       return { Err: handleError(error) };
     }
@@ -187,6 +185,7 @@ export default class {
     fileSize: bigint,
   ): Promise<Principal | null> {
     let user = this.userStorage.get(userId);
+
     if (!user) {
       const canisterId = await this.deployCanister();
       if (!canisterId) return null;
@@ -196,6 +195,7 @@ export default class {
         canisters: [canisterId.toText()],
         canistersMarkedFull: [],
       };
+
       this.userStorage.insert(userId, user);
       return canisterId;
     }
@@ -205,9 +205,9 @@ export default class {
   private async deployCanister(): Promise<Principal | null> {
     const createCanisterResult = await createCanister();
     const canisterId = createCanisterResult.canister_id;
+    const wasmModule = this.wasmModule;
 
-    const wasmModule = this.codeStorage.get(0);
-    if (wasmModule === null) {
+    if (!wasmModule) {
       throw new Error("No code found in storage at index 0");
     } else {
       // Now wasmModule is guaranteed to be a valid Uint8Array

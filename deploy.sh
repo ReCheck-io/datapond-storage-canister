@@ -98,7 +98,7 @@ fi
 # Build storage canister
 echo "Building Storage canister..."
 dfx canister create "$storage_canister_id"
-dfx compile "$storage_canister_id"
+dfx deploy "$storage_canister_id"
 
 # Run optimization command to optimize storage canister's wasm output
 echo "Optimizing storage wasm output..."
@@ -108,12 +108,12 @@ gzip -f -1 "$wasm" -c > "$optimized_wasm"
 echo "Building/deploying Facade canister..."
 dfx deploy --network="$network" "$facade_canister_id"
 
-# Load wasm output to Facade canister
-echo "Loading optimized wasm output to facade..."
-dfx canister --network="$network" call "$facade_canister_id" loadCanisterCode --argument-file <(echo "(blob \"$(hexdump -ve '1/1 "%.2x"' "$optimized_wasm" | sed 's/../\\&/g')\")")
-
 # Run initializeCanister method of Facade and pass the given Principle parameter
 echo "Adding provided principal to the list of authorized services..."
 dfx canister --network="$network" call "$facade_canister_id" initializeCanister "(principal \"$service_id\")"
+
+# Load wasm output to Facade canister
+echo "Loading optimized wasm output to facade..."
+dfx canister --network="$network" call "$facade_canister_id" loadCanisterCode --argument-file <(echo "(blob \"$(hexdump -ve '1/1 "%.2x"' "$optimized_wasm" | sed 's/../\\&/g')\")")
 
 echo 'DataPond Storage canisters are deployed and set successfully!'

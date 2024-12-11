@@ -8,7 +8,8 @@
       "opt_level": "1",
       "gzip": true,
       "declarations": {
-        "output": "./dfx-declarations/storage"
+        "output": "./dfx-declarations/storage",
+        "node_compatibility": true
       }
     },
     "facade": {
