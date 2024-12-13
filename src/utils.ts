@@ -1,73 +1,13 @@
-import { call, Principal } from "azle";
-import {
-  CanisterStatusArgs,
-  CanisterStatusResult,
-  CreateCanisterArgs,
-  CreateCanisterResult,
-  DepositCyclesArgs,
-  InstallCodeArgs,
-} from "azle/canisters/management";
+import { ErrorType, Serializable } from "./types";
 
-import { ErrorType } from "./types";
-
-export async function createCanister(): Promise<CreateCanisterResult> {
-  return await call("aaaaa-aa", "create_canister", {
-    paramIdlTypes: [CreateCanisterArgs],
-    returnIdlType: CreateCanisterResult,
-    args: [{ settings: [], sender_canister_version: [] }],
-    payment: 50_000_000_000_000n,
-  });
-}
-
-export async function installCode(
-  canisterId: Principal,
-  wasmModule: Uint8Array,
-): Promise<boolean> {
-  await call("aaaaa-aa", "install_code", {
-    paramIdlTypes: [InstallCodeArgs],
-    args: [
-      {
-        mode: {
-          install: null,
-        },
-        canister_id: canisterId,
-        wasm_module: wasmModule,
-        arg: Uint8Array.from([]),
-        sender_canister_version: [],
-      },
-    ],
-    payment: 100_000_000_000n,
-  });
-
-  return true;
-}
-
-export async function getCanisterStatus(
-  canisterId: Principal,
-): Promise<CanisterStatusResult> {
-  return await call("aaaaa-aa", "canister_status", {
-    paramIdlTypes: [CanisterStatusArgs],
-    returnIdlType: CanisterStatusResult,
-    args: [{ canister_id: canisterId }],
-  });
-}
-
-export async function depositCycles(
-  canisterId: Principal,
-  cycleAmount: bigint = 15_000_000n,
-): Promise<boolean> {
-  await call("aaaaa-aa", "deposit_cycles", {
-    paramIdlTypes: [DepositCyclesArgs],
-    args: [
-      {
-        canister_id: canisterId,
-      },
-    ],
-    payment: cycleAmount,
-  });
-
-  return true;
-}
+export const Uint8ArraySerializer: Serializable<Uint8Array> = {
+  toBytes(data: Uint8Array): Uint8Array {
+    return data;
+  },
+  fromBytes(bytes: Uint8Array): Uint8Array {
+    return bytes;
+  },
+};
 
 export function bigIntToNumber(value: bigint): number {
   if (!value) return 0;
@@ -102,5 +42,8 @@ export function handleError(error: any): ErrorType {
   }
 
   // Default error if structure doesn't match or no known variants are found
-  return { InvalidPayload: "An unknown error occurred." };
+  return {
+    InvalidPayload:
+      "An unknown error occurred. " + JSON.stringify(error, null, 4),
+  };
 }
